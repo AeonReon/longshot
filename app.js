@@ -1,0 +1,415 @@
+// Longshot — stitch overlapping screenshots in the browser.
+// Pure client-side. Files never leave the device.
+
+const $ = (id) => document.getElementById(id);
+const drop   = $('drop');
+const fileEl = $('file');
+const grid   = $('grid');
+const stitchBtn = $('stitch');
+const clearBtn  = $('clear');
+const hint   = $('hint');
+const status = $('status');
+const statusMsg = $('statusMsg');
+const progress = $('progress');
+const resultEl = $('result');
+const resultImg = $('resultImg');
+const resultMeta = $('resultMeta');
+const downloadEl = $('download');
+const newOneBtn = $('newOne');
+
+let items = [];   // { id, file, url, bitmap?, w?, h? }
+let working = false;
+
+// ---------- file ingest ----------
+
+drop.addEventListener('click', () => fileEl.click());
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+});
+fileEl.addEventListener('change', (e) => {
+  if (e.target.files?.length) addFiles(e.target.files);
+  fileEl.value = '';
+});
+
+// Paste support (desktop)
+window.addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (files.length) addFiles(files);
+});
+
+function addFiles(fileList) {
+  const incoming = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!incoming.length) return;
+  // Sort by filename so iOS IMG_4001 < IMG_4002 ordering works
+  incoming.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  for (const f of incoming) {
+    items.push({ id: crypto.randomUUID(), file: f, url: URL.createObjectURL(f) });
+  }
+  render();
+}
+
+function removeItem(id) {
+  const it = items.find(i => i.id === id);
+  if (it) URL.revokeObjectURL(it.url);
+  items = items.filter(i => i.id !== id);
+  render();
+}
+
+function moveItem(id, dir) {
+  const i = items.findIndex(x => x.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= items.length) return;
+  [items[i], items[j]] = [items[j], items[i]];
+  render();
+}
+
+clearBtn.addEventListener('click', () => {
+  for (const it of items) URL.revokeObjectURL(it.url);
+  items = [];
+  hideResult();
+  render();
+});
+
+newOneBtn.addEventListener('click', () => {
+  hideResult();
+  for (const it of items) URL.revokeObjectURL(it.url);
+  items = [];
+  render();
+});
+
+// ---------- render tile grid ----------
+
+function render() {
+  grid.innerHTML = '';
+  items.forEach((it, idx) => {
+    const div = document.createElement('div');
+    div.className = 'tile';
+    div.draggable = true;
+    div.dataset.id = it.id;
+    div.innerHTML = `
+      <img src="${it.url}" alt="">
+      <div class="num">${idx + 1}</div>
+      <button class="x" aria-label="Remove">×</button>
+      <div class="nudge" style="position:absolute;bottom:4px;left:4px;right:4px;display:flex;gap:4px;justify-content:space-between">
+        <button class="nudge-l" style="background:rgba(0,0,0,.55);color:#fff;border:0;width:28px;height:24px;border-radius:6px;font-size:13px;cursor:pointer">◀</button>
+        <button class="nudge-r" style="background:rgba(0,0,0,.55);color:#fff;border:0;width:28px;height:24px;border-radius:6px;font-size:13px;cursor:pointer">▶</button>
+      </div>
+    `;
+    div.querySelector('.x').onclick = (e) => { e.stopPropagation(); removeItem(it.id); };
+    div.querySelector('.nudge-l').onclick = (e) => { e.stopPropagation(); moveItem(it.id, -1); };
+    div.querySelector('.nudge-r').onclick = (e) => { e.stopPropagation(); moveItem(it.id, +1); };
+
+    // Native HTML5 drag-and-drop reorder (desktop)
+    div.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', it.id);
+      div.classList.add('dragging');
+    });
+    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+    div.addEventListener('dragover', (e) => e.preventDefault());
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const fromId = e.dataTransfer.getData('text/plain');
+      if (!fromId || fromId === it.id) return;
+      const fromIdx = items.findIndex(x => x.id === fromId);
+      const toIdx   = items.findIndex(x => x.id === it.id);
+      if (fromIdx < 0 || toIdx < 0) return;
+      const [moved] = items.splice(fromIdx, 1);
+      items.splice(toIdx, 0, moved);
+      render();
+    });
+
+    grid.appendChild(div);
+  });
+
+  stitchBtn.disabled = items.length < 2 || working;
+  clearBtn.style.display = items.length ? '' : 'none';
+  hint.textContent = items.length === 0
+    ? ''
+    : items.length === 1
+      ? 'Add at least one more screenshot.'
+      : `${items.length} images — drag to reorder, or use the arrows.`;
+}
+
+// ---------- stitching ----------
+
+stitchBtn.addEventListener('click', async () => {
+  if (working || items.length < 2) return;
+  working = true;
+  stitchBtn.disabled = true;
+  hideResult();
+  showStatus('Loading images…', 0);
+
+  try {
+    // Decode all images
+    for (let i = 0; i < items.length; i++) {
+      showStatus(`Loading image ${i+1}/${items.length}…`, (i / items.length) * 0.2);
+      items[i].bitmap = await createImageBitmap(items[i].file);
+      items[i].w = items[i].bitmap.width;
+      items[i].h = items[i].bitmap.height;
+    }
+
+    // Width must match
+    const w0 = items[0].w;
+    for (const it of items) {
+      if (it.w !== w0) {
+        throw new Error(`Image widths don’t match (${items[0].file.name}=${w0}px, ${it.file.name}=${it.w}px). All screenshots must come from the same device.`);
+      }
+    }
+
+    // Pre-compute greyscale at low + full res for each image
+    showStatus('Analysing overlap…', 0.25);
+    const LOW_W = 320;
+    for (let i = 0; i < items.length; i++) {
+      items[i].low  = await greyscaleScaled(items[i].bitmap, LOW_W);
+      items[i].full = await greyscaleScaled(items[i].bitmap, items[i].w);
+      showStatus('Analysing overlap…', 0.25 + (i / items.length) * 0.25);
+    }
+
+    // For each consecutive pair, find overlap
+    // overlap[i] = how many rows of items[i+1] should be skipped from the top
+    const skips = [0];
+    let warnings = [];
+    for (let i = 0; i < items.length - 1; i++) {
+      showStatus(`Matching ${i+1} → ${i+2}…`, 0.5 + (i / items.length) * 0.3);
+      const m = await findOverlap(items[i], items[i+1]);
+      skips.push(m.skip);
+      if (m.poor) warnings.push(`Pair ${i+1}→${i+2}: weak overlap, falling back to direct concatenation.`);
+    }
+
+    // Build final canvas
+    showStatus('Stitching…', 0.85);
+    const totalH = items.reduce((sum, it, i) => sum + (it.h - skips[i]), 0);
+    const out = document.createElement('canvas');
+    out.width = w0;
+    out.height = totalH;
+    const ctx = out.getContext('2d');
+    let y = 0;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const sy = skips[i];
+      const sh = it.h - sy;
+      ctx.drawImage(it.bitmap, 0, sy, it.w, sh, 0, y, it.w, sh);
+      y += sh;
+    }
+
+    // Export
+    showStatus('Exporting…', 0.95);
+    const blob = await new Promise(res => out.toBlob(res, 'image/png'));
+    const url = URL.createObjectURL(blob);
+    showResult(url, out.width, out.height, blob.size, warnings);
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Failed: ' + err.message, 1, true);
+  } finally {
+    working = false;
+    stitchBtn.disabled = items.length < 2;
+  }
+});
+
+// Render a bitmap into a canvas at given width and return greyscale Uint8Array + dims
+async function greyscaleScaled(bitmap, targetW) {
+  const ratio = targetW / bitmap.width;
+  const w = Math.round(targetW);
+  const h = Math.round(bitmap.height * ratio);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const grey = new Uint8ClampedArray(w * h);
+  for (let i = 0, p = 0; i < grey.length; i++, p += 4) {
+    // perceptual luminance approximation
+    grey[i] = (data[p] * 76 + data[p+1] * 150 + data[p+2] * 30) >> 8;
+  }
+  return { grey, w, h };
+}
+
+// Find overlap between A (top) and B (bottom).
+// Strategy: rough match at downsampled width, then refine at full resolution.
+// Returns { skip, poor } where skip = rows of B to skip from top.
+async function findOverlap(itemA, itemB) {
+  const aLow = itemA.low, bLow = itemB.low;
+  const stripLow = Math.min(40, Math.floor(aLow.h * 0.2));
+
+  // Search range: skip from min=10% of B height to max=B height - stripLow
+  // (we assume there's at least some overlap; user took screenshots while scrolling)
+  const minY = 0;
+  const maxY = bLow.h - stripLow;
+
+  const rough = ssdSearch(
+    aLow.grey, aLow.w, aLow.h,
+    bLow.grey, bLow.w, bLow.h,
+    stripLow, minY, maxY
+  );
+
+  // Scale rough.y from low-res to full-res
+  const aFull = itemA.full, bFull = itemB.full;
+  const ratio = bFull.h / bLow.h;
+  const roughYFull = Math.round(rough.y * ratio);
+  const stripFull = Math.min(80, Math.floor(aFull.h * 0.08));
+  const refineRange = Math.ceil(ratio) + 4; // ±N pixels around rough match
+
+  const refined = ssdSearch(
+    aFull.grey, aFull.w, aFull.h,
+    bFull.grey, bFull.w, bFull.h,
+    stripFull,
+    Math.max(0, roughYFull - refineRange),
+    Math.min(bFull.h - stripFull, roughYFull + refineRange)
+  );
+
+  // Score interpretation: avg squared diff per pixel.
+  // Pure white-on-white ~0; mismatched content ~2000+. Use 1500 as poor threshold.
+  const POOR = 1500;
+  const poor = refined.score > POOR;
+
+  // Skip = end of overlap region in B = refined.y + stripFull
+  // Because the bottom 'stripFull' rows of A appear in B starting at refined.y,
+  // so B[0..refined.y+stripFull] is already shown in A.
+  const skip = poor ? 0 : refined.y + stripFull;
+  return { skip, poor, score: refined.score };
+}
+
+// Sum-of-squared-differences search.
+// Compares aGrey[stripStart..aH] (the bottom strip of A) against
+// bGrey[y..y+stripH] for y in [yMin..yMax]. Returns best y and avg score.
+function ssdSearch(aGrey, aW, aH, bGrey, bW, bH, stripH, yMin, yMax) {
+  const stripStart = aH - stripH;
+  let bestY = yMin;
+  let bestScore = Infinity;
+
+  for (let y = yMin; y <= yMax; y++) {
+    let sum = 0;
+    for (let row = 0; row < stripH; row++) {
+      const aOff = (stripStart + row) * aW;
+      const bOff = (y + row) * bW;
+      for (let x = 0; x < aW; x++) {
+        const d = aGrey[aOff + x] - bGrey[bOff + x];
+        sum += d * d;
+      }
+      if (sum > bestScore) break; // early exit
+    }
+    if (sum < bestScore) {
+      bestScore = sum;
+      bestY = y;
+    }
+  }
+  return { y: bestY, score: bestScore / (stripH * aW) };
+}
+
+// ---------- UI helpers ----------
+
+function showStatus(msg, frac, error = false) {
+  status.classList.add('show');
+  statusMsg.textContent = msg;
+  statusMsg.style.color = error ? 'var(--warn)' : 'var(--soft)';
+  progress.style.width = Math.min(100, Math.max(0, frac * 100)) + '%';
+}
+function hideStatus() { status.classList.remove('show'); }
+
+function showResult(url, w, h, sizeBytes, warnings) {
+  hideStatus();
+  resultImg.src = url;
+  const kb = (sizeBytes / 1024).toFixed(0);
+  const mb = (sizeBytes / 1024 / 1024).toFixed(2);
+  const sizeStr = sizeBytes > 1024*1024 ? `${mb} MB` : `${kb} KB`;
+  let meta = `${w} × ${h}px · ${sizeStr}`;
+  if (warnings.length) meta += '<br><span style="color:var(--warn)">⚠ ' + warnings.join(' ') + '</span>';
+  resultMeta.innerHTML = meta;
+  downloadEl.href = url;
+  const ts = new Date().toISOString().replace(/[-:T.]/g,'').slice(0,14);
+  downloadEl.download = `longshot-${ts}.png`;
+  resultEl.classList.add('show');
+  resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function hideResult() { resultEl.classList.remove('show'); }
+
+render();
+
+// ---------- Tabs ----------
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    const tab = btn.dataset.tab;
+    document.getElementById('panel-url').classList.toggle('active', tab === 'url');
+    document.getElementById('panel-stitch').classList.toggle('active', tab === 'stitch');
+    hideResult();
+    hideStatus();
+  });
+});
+
+// ---------- URL mode ----------
+
+const urlInput = $('urlInput');
+const captureBtn = $('capture');
+const urlHint = $('urlHint');
+const widthSeg = $('widthSeg');
+
+let chosenWidth = 390;
+widthSeg.querySelectorAll('button').forEach(b => {
+  b.addEventListener('click', () => {
+    widthSeg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    chosenWidth = parseInt(b.dataset.w, 10);
+  });
+});
+
+captureBtn.addEventListener('click', async () => {
+  if (working) return;
+  let url = urlInput.value.trim();
+  if (!url) { urlInput.focus(); urlHint.textContent = 'Paste a URL first.'; return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  urlHint.textContent = '';
+
+  working = true;
+  captureBtn.disabled = true;
+  hideResult();
+  showStatus('Loading the page on the server…', 0.15);
+
+  try {
+    const t0 = performance.now();
+    let frac = 0.15;
+    const tick = setInterval(() => {
+      frac = Math.min(0.9, frac + 0.04);
+      showStatus(`Rendering at ${chosenWidth}px width…`, frac);
+    }, 1200);
+
+    const resp = await fetch('/api/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, width: chosenWidth })
+    });
+    clearInterval(tick);
+
+    if (!resp.ok) {
+      let err = 'Failed';
+      try { const j = await resp.json(); err = j.error || err; } catch {}
+      throw new Error(err);
+    }
+
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const dims = await new Promise((res) => {
+      const im = new Image();
+      im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
+      im.onerror = () => res({ w: chosenWidth, h: 0 });
+      im.src = blobUrl;
+    });
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+    showResult(blobUrl, dims.w, dims.h, blob.size, [`Captured in ${elapsed}s`]);
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Failed: ' + err.message, 1, true);
+  } finally {
+    working = false;
+    captureBtn.disabled = false;
+  }
+});

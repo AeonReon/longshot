@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FFB347">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Longshot">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+<link rel="icon" href="/images/favicon.png">
+<title>Longshot — long screenshots, stitched</title>
+<style>
+  :root{
+    --bg:#FFF8EE;
+    --ink:#1F1A14;
+    --soft:#6B5C46;
+    --line:#E8DCC4;
+    --card:#FFFDF7;
+    --accent:#FF8A2B;
+    --accent-deep:#D86A0F;
+    --good:#3F8F4A;
+    --warn:#C25555;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    min-height:100dvh;
+    padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+  }
+  header{
+    max-width:780px;margin:24px auto 8px;
+    display:flex;align-items:center;gap:12px;
+  }
+  header .logo{
+    width:42px;height:42px;border-radius:11px;
+    background:var(--accent);
+    display:grid;place-items:center;
+    box-shadow:0 4px 0 var(--accent-deep);
+    font-size:22px;
+  }
+  header h1{font-size:22px;margin:0;letter-spacing:-0.01em}
+  header p{margin:2px 0 0;color:var(--soft);font-size:13px}
+
+  main{max-width:780px;margin:18px auto 80px}
+
+  .drop{
+    background:var(--card);
+    border:2px dashed var(--line);
+    border-radius:18px;
+    padding:28px 18px;
+    text-align:center;
+    cursor:pointer;
+    transition:.15s border-color,.15s background;
+  }
+  .drop:hover,.drop.over{border-color:var(--accent);background:#FFF4E2}
+  .drop strong{display:block;font-size:17px;margin-bottom:4px}
+  .drop span{color:var(--soft);font-size:13px}
+  .drop input{display:none}
+
+  .grid{
+    margin-top:18px;
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+    gap:10px;
+  }
+  .tile{
+    position:relative;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:12px;
+    overflow:hidden;
+    aspect-ratio:9/16;
+    user-select:none;
+    cursor:grab;
+    touch-action:none;
+  }
+  .tile.dragging{opacity:.4}
+  .tile img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+  .tile .num{
+    position:absolute;top:6px;left:6px;
+    background:var(--accent);color:#fff;
+    width:22px;height:22px;border-radius:50%;
+    display:grid;place-items:center;
+    font-size:12px;font-weight:700;
+  }
+  .tile .x{
+    position:absolute;top:4px;right:4px;
+    background:rgba(0,0,0,.55);color:#fff;
+    border:0;width:24px;height:24px;border-radius:50%;
+    font-size:14px;line-height:1;cursor:pointer;
+  }
+
+  .actions{
+    margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+  }
+  button.primary{
+    background:var(--accent);color:#fff;border:0;
+    padding:14px 22px;border-radius:12px;
+    font-size:16px;font-weight:600;cursor:pointer;
+    box-shadow:0 3px 0 var(--accent-deep);
+  }
+  button.primary:active{transform:translateY(2px);box-shadow:0 1px 0 var(--accent-deep)}
+  button.primary:disabled{background:#E5DCC8;color:#9A8E76;box-shadow:0 3px 0 #C9BFA6;cursor:not-allowed}
+  button.ghost{
+    background:transparent;color:var(--ink);border:1px solid var(--line);
+    padding:13px 18px;border-radius:12px;font-size:15px;cursor:pointer;
+  }
+  .hint{color:var(--soft);font-size:13px;margin-left:auto}
+
+  .status{
+    margin-top:16px;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:14px 16px;
+    display:none;
+  }
+  .status.show{display:block}
+  .bar{
+    height:6px;background:#F1E6CC;border-radius:99px;overflow:hidden;margin-top:8px;
+  }
+  .bar > div{height:100%;background:var(--accent);width:0;transition:width .2s}
+  .status .msg{font-size:14px;color:var(--soft)}
+
+  .result{
+    margin-top:18px;
+    display:none;
+  }
+  .result.show{display:block}
+  .result .preview{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:10px;
+    max-height:60vh;overflow:auto;
+  }
+  .result .preview img{width:100%;display:block;border-radius:6px}
+  .result .meta{
+    color:var(--soft);font-size:13px;margin:8px 2px;
+  }
+
+  footer{
+    max-width:780px;margin:32px auto 12px;
+    color:var(--soft);font-size:12px;text-align:center;
+  }
+  footer a{color:var(--soft)}
+
+  .pill{
+    position:fixed;bottom:6px;right:8px;
+    font-size:10px;color:var(--soft);opacity:.55;
+    font-family:ui-monospace,monospace;
+  }
+  .reload-banner{
+    position:fixed;left:0;right:0;bottom:0;
+    background:var(--ink);color:#fff;
+    padding:12px;text-align:center;font-size:14px;cursor:pointer;
+    display:none;
+  }
+  .reload-banner.show{display:block}
+
+  /* Tabs */
+  .tabs{
+    display:flex;gap:6px;margin:10px 0 14px;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:5px;
+  }
+  .tab{
+    flex:1;text-align:center;padding:10px 8px;
+    font-size:14px;font-weight:600;color:var(--soft);
+    border-radius:10px;cursor:pointer;border:0;background:transparent;
+  }
+  .tab.active{background:var(--accent);color:#fff;box-shadow:0 2px 0 var(--accent-deep)}
+  .tab small{display:block;font-weight:400;font-size:11px;opacity:.85;margin-top:2px}
+
+  .panel{display:none}
+  .panel.active{display:block}
+
+  /* URL mode */
+  .url-card{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:18px;padding:18px;
+  }
+  .url-card label{
+    display:block;font-size:13px;color:var(--soft);
+    margin:0 0 6px;font-weight:600;
+  }
+  .url-card input[type="url"]{
+    width:100%;padding:14px 14px;font-size:16px;
+    border:1px solid var(--line);border-radius:12px;
+    background:#fff;color:var(--ink);
+    -webkit-appearance:none;
+  }
+  .url-card input[type="url"]:focus{
+    outline:none;border-color:var(--accent);
+  }
+  .url-row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
+  .seg{
+    display:inline-flex;background:#F4EAD2;border-radius:10px;padding:3px;
+  }
+  .seg button{
+    border:0;background:transparent;color:var(--soft);
+    padding:8px 12px;font-size:13px;font-weight:600;
+    border-radius:8px;cursor:pointer;
+  }
+  .seg button.active{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .url-help{
+    margin-top:10px;color:var(--soft);font-size:12px;line-height:1.4;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📜</div>
+  <div>
+    <h1>Longshot</h1>
+    <p>One-tap long screenshots — paste a URL or stitch your own.</p>
+  </div>
+</header>
+
+<main>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="url" role="tab">
+      Paste URL <small>one-click, public pages</small>
+    </button>
+    <button class="tab" data-tab="stitch" role="tab">
+      Stitch screenshots <small>any app, any content</small>
+    </button>
+  </div>
+
+  <div class="panel active" id="panel-url">
+    <div class="url-card">
+      <label for="urlInput">Webpage URL</label>
+      <input id="urlInput" type="url" inputmode="url" autocomplete="off"
+             autocapitalize="none" autocorrect="off"
+             placeholder="https://example.com/long-article">
+
+      <div class="url-row">
+        <span style="font-size:13px;color:var(--soft);font-weight:600">Render at</span>
+        <div class="seg" id="widthSeg" role="radiogroup">
+          <button data-w="390" class="active">iPhone</button>
+          <button data-w="768">Tablet</button>
+          <button data-w="1280">Desktop</button>
+        </div>
+      </div>
+
+      <div class="url-row">
+        <button class="primary" id="capture">Capture long screenshot</button>
+        <span class="hint" id="urlHint"></span>
+      </div>
+
+      <p class="url-help">
+        Works for public webpages and articles. For logged-in pages
+        (Gmail, banking, private stuff) use the <strong>Stitch</strong> tab —
+        the server can’t see content behind your login.
+      </p>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-stitch">
+    <label class="drop" id="drop">
+      <strong>Drop screenshots here, or tap to choose</strong>
+      <span>Take 2+ overlapping screenshots, scrolling a bit each time. Order matters — sort them after.</span>
+      <input id="file" type="file" accept="image/*" multiple>
+    </label>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="actions">
+      <button class="primary" id="stitch" disabled>Stitch images</button>
+      <button class="ghost" id="clear" style="display:none">Clear</button>
+      <span class="hint" id="hint"></span>
+    </div>
+  </div>
+
+  <div class="status" id="status">
+    <div class="msg" id="statusMsg">Working…</div>
+    <div class="bar"><div id="progress"></div></div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="meta" id="resultMeta"></div>
+    <div class="preview"><img id="resultImg" alt="Stitched result"></div>
+    <div class="actions">
+      <a id="download" class="primary" style="text-decoration:none;display:inline-block">Save PNG</a>
+      <button class="ghost" id="newOne">Start over</button>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Stitch mode runs entirely in your browser — screenshots never leave the device.<br>
+  URL mode renders public pages on the server and returns a single PNG.
+</footer>
+
+<div class="pill" id="pill"></div>
+<div class="reload-banner" id="reloadBanner" onclick="location.reload()">🔄 New version available — tap to reload</div>
+
+<script src="/app.js"></script>
+<script>
+  // PWA service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }
+  // Build stamp + auto-refresh
+  (async function(){
+    const pill = document.getElementById('pill');
+    const banner = document.getElementById('reloadBanner');
+    let initial = null;
+    async function check(){
+      try{
+        const r = await fetch('/api/build-stamp',{cache:'no-store'});
+        const j = await r.json();
+        const stamp = String(j.stamp||'');
+        if (initial === null) {
+          initial = stamp;
+          pill.textContent = 'v' + stamp.slice(-6);
+        } else if (stamp && stamp !== initial) {
+          banner.classList.add('show');
+        }
+      }catch(e){}
+    }
+    check();
+    setInterval(check, 60_000);
+  })();
+</script>
+
+</body>
+</html>
