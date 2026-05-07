@@ -1,8 +1,7 @@
-// Longshot service worker — minimal cache, network-first for HTML so deploys land fast.
-const VERSION = 'longshot-v1';
-const STATIC = [
-  '/manifest.json',
-  '/app.js',
+// Longshot service worker — network-first for code, cache-first only for icons.
+// Bumping VERSION forces all clients to drop the old cache on next activate.
+const VERSION = 'longshot-v3';
+const ICONS = [
   '/images/icon-192.png',
   '/images/icon-512.png',
   '/images/apple-touch-icon.png',
@@ -10,7 +9,11 @@ const STATIC = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(STATIC)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(VERSION)
+      .then(c => c.addAll(ICONS).catch(() => {}))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -22,26 +25,27 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
 
-  // Always network for HTML and the build stamp — never serve stale shell
-  if (e.request.mode === 'navigate'
-      || url.pathname === '/'
-      || url.pathname.endsWith('.html')
-      || url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+  // Cache-first only for image icons inside /images/
+  if (url.pathname.startsWith('/images/')) {
+    e.respondWith(
+      caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
+        if (resp.ok && resp.type === 'basic') {
+          const copy = resp.clone();
+          caches.open(VERSION).then(c => c.put(e.request, copy));
+        }
+        return resp;
+      }).catch(() => hit))
+    );
     return;
   }
 
-  // Cache-first for static assets
+  // Everything else (HTML, JS, manifest, /api/*) is network-first.
+  // Fall back to cache only on offline failure for HTML so the app still loads.
   e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
-      if (resp.ok && resp.type === 'basic') {
-        const copy = resp.clone();
-        caches.open(VERSION).then(c => c.put(e.request, copy));
-      }
-      return resp;
-    }).catch(() => hit))
+    fetch(e.request)
+      .catch(() => caches.match(e.request))
   );
 });
