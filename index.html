@@ -353,6 +353,10 @@
 
 <script src="/app.js"></script>
 <script>
+  // Human-readable version. Bump this when shipping a meaningful change.
+  // The git SHA is still used internally for new-build detection (auto-refresh banner).
+  const APP_VERSION = 'v7';
+
   // PWA service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -362,6 +366,8 @@
     const pill = document.getElementById('pill');
     const verBadge = document.getElementById('verBadge');
     const banner = document.getElementById('reloadBanner');
+    pill.textContent = APP_VERSION;
+    verBadge.textContent = APP_VERSION;
     let initial = null;
     async function check(){
       try{
@@ -370,14 +376,11 @@
         const stamp = String(j.stamp||'');
         if (initial === null) {
           initial = stamp;
-          const tag = 'v' + stamp.slice(-6);
-          pill.textContent = tag;
-          verBadge.textContent = tag;
         } else if (stamp && stamp !== initial) {
           banner.classList.add('show');
         }
       }catch(e){
-        verBadge.textContent = 'v?';
+        // Network blip — keep showing the current version, don't blank it.
       }
     }
     check();
