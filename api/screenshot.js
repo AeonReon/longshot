@@ -1,8 +1,12 @@
 // Server-side full-page screenshot via headless Chromium.
 // POST { url: string, width?: number } → PNG bytes.
 
-import chromium from '@sparticuz/chromium';
+import chromium from '@sparticuz/chromium-min';
 import puppeteer from 'puppeteer-core';
+
+// Hosted chromium binary matching the @sparticuz/chromium-min version pinned in package.json.
+// Downloaded on the first cold start, then cached in /tmp for the lifetime of the container.
+const CHROMIUM_PACK = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
 
 const ALLOWED_WIDTHS = new Set([390, 414, 430, 768, 1024, 1280, 1440, 1920]);
 const FETCH_TIMEOUT_MS = 35_000;
@@ -85,7 +89,7 @@ export default async function handler(req, res) {
         isMobile,
         hasTouch: isMobile,
       },
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(CHROMIUM_PACK),
       headless: chromium.headless,
     });
 
