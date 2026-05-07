@@ -22,7 +22,9 @@ let working = false;
 
 // ---------- file ingest ----------
 
-drop.addEventListener('click', () => fileEl.click());
+// NOTE: do NOT add a JS click handler that calls fileEl.click() — the drop zone
+// is a <label> wrapping the <input>, so iOS fires the picker natively on tap.
+// A programmatic click() on top of that races and dismisses the picker on iOS.
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => {

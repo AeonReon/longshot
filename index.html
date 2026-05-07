@@ -66,7 +66,13 @@
   .drop:hover,.drop.over{border-color:var(--accent);background:#FFF4E2}
   .drop strong{display:block;font-size:17px;margin-bottom:4px}
   .drop span{color:var(--soft);font-size:13px}
-  .drop input{display:none}
+  /* iOS Safari needs the input to be in the layout (not display:none) for the
+     change event to fire reliably. Hide it visually but keep it tappable. */
+  .drop input{
+    position:absolute;width:1px;height:1px;
+    opacity:0;overflow:hidden;
+    clip-path:inset(50%);
+  }
 
   .grid{
     margin-top:18px;
