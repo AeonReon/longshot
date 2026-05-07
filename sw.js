@@ -1,6 +1,6 @@
 // Longshot service worker — network-first for code, cache-first only for icons.
 // Bumping VERSION forces all clients to drop the old cache on next activate.
-const VERSION = 'longshot-v3';
+const VERSION = 'longshot-v4';
 const ICONS = [
   '/images/icon-192.png',
   '/images/icon-512.png',

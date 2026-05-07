@@ -22,19 +22,34 @@ let working = false;
 
 // ---------- file ingest ----------
 
-// NOTE: do NOT add a JS click handler that calls fileEl.click() — the drop zone
-// is a <label> wrapping the <input>, so iOS fires the picker natively on tap.
-// A programmatic click() on top of that races and dismisses the picker on iOS.
+// On-screen diagnostic strip — invaluable for iPhone debugging where there's no console.
+const diagEl = document.getElementById('diag');
+const diagLog = (msg) => {
+  if (!diagEl) return;
+  const t = new Date().toTimeString().slice(0,8);
+  diagEl.innerHTML = `<b>${t}</b> ${msg}<br>` + (diagEl.innerHTML || '').split('<br>').slice(0,3).join('<br>');
+};
+window.addEventListener('error', (e) => diagLog('JS ERROR: ' + (e.message || e.error)));
+window.addEventListener('unhandledrejection', (e) => diagLog('PROMISE REJECT: ' + (e.reason?.message || e.reason)));
+
+// The <input> is now positioned absolutely over the entire drop zone with
+// opacity:0 — iOS taps land directly on the input element, native picker.
+// No label association, no JS click(), no race conditions.
+fileEl.addEventListener('click', () => diagLog('input click fired'));
+fileEl.addEventListener('change', (e) => {
+  const list = e.target.files;
+  diagLog(`change fired, files=${list ? list.length : 'null'}`);
+  if (list && list.length) addFiles(list);
+  // NB: don't reset fileEl.value here — on iOS some versions reset before
+  // the FileList objects are fully read. Reset only on next user gesture if needed.
+});
+
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => {
   e.preventDefault();
   drop.classList.remove('over');
   if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
-});
-fileEl.addEventListener('change', (e) => {
-  if (e.target.files?.length) addFiles(e.target.files);
-  fileEl.value = '';
 });
 
 // Paste support (desktop)
@@ -45,13 +60,19 @@ window.addEventListener('paste', (e) => {
 
 function addFiles(fileList) {
   const all = [...fileList];
+  diagLog(`addFiles: ${all.length} raw, types=${all.map(f => f.type || '?').join(',')}`);
   // iOS sometimes returns empty type for HEIC/HEIF picked from Photos.
   // Trust the picker (accept="image/*") AND fall back to extension sniffing.
+  // Last resort: just accept everything when MIME and extension both fail.
   const incoming = all.filter(f => {
     const t = f.type || '';
     if (t.startsWith('image/')) return true;
-    return /\.(heic|heif|jpe?g|png|webp|gif|bmp|tiff?|avif)$/i.test(f.name || '');
+    if (/\.(heic|heif|jpe?g|png|webp|gif|bmp|tiff?|avif)$/i.test(f.name || '')) return true;
+    // iOS Photos sometimes hands over files with empty name AND empty type.
+    // Trust the picker since accept="image/*" already filtered at OS level.
+    return f.size > 0;
   });
+  diagLog(`addFiles: ${incoming.length} accepted after filter`);
   if (!incoming.length) {
     hint.textContent = all.length
       ? `Couldn't find image files in your selection (${all.length} picked). Try JPG/PNG.`
@@ -64,8 +85,13 @@ function addFiles(fileList) {
     ? crypto.randomUUID()
     : 'i' + Math.random().toString(36).slice(2) + Date.now());
   for (const f of incoming) {
-    items.push({ id: newId(), file: f, url: URL.createObjectURL(f) });
+    try {
+      items.push({ id: newId(), file: f, url: URL.createObjectURL(f) });
+    } catch (e) {
+      diagLog(`createObjectURL failed for ${f.name}: ${e.message}`);
+    }
   }
+  diagLog(`items now: ${items.length}, calling render()`);
   render();
 }
 
