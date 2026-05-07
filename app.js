@@ -242,7 +242,7 @@ stitchBtn.addEventListener('click', async () => {
     showStatus('Stitching…', 0.85);
     const totalH = items.reduce((sum, it, i) => sum + (it.h - skips[i]), 0);
     const out = document.createElement('canvas');
-    out.width = w0;
+    out.width = targetW;
     out.height = totalH;
     const ctx = out.getContext('2d');
     let y = 0;
