@@ -74,26 +74,40 @@
     border:1px solid var(--line);
     border-radius:12px;
     overflow:hidden;
-    aspect-ratio:9/16;
     user-select:none;
-    cursor:grab;
-    touch-action:none;
+    display:flex;flex-direction:column;
   }
   .tile.dragging{opacity:.4}
-  .tile img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+  .tile .thumb{
+    position:relative;
+    aspect-ratio:9/16;
+    overflow:hidden;
+    background:#F1E6CC;
+    cursor:grab;
+  }
+  .tile .thumb img{width:100%;height:100%;object-fit:cover;pointer-events:none;display:block}
   .tile .num{
     position:absolute;top:6px;left:6px;
     background:var(--accent);color:#fff;
     width:22px;height:22px;border-radius:50%;
     display:grid;place-items:center;
     font-size:12px;font-weight:700;
+    box-shadow:0 1px 3px rgba(0,0,0,.35);
   }
   .tile .x{
     position:absolute;top:4px;right:4px;
     background:rgba(0,0,0,.55);color:#fff;
-    border:0;width:24px;height:24px;border-radius:50%;
-    font-size:14px;line-height:1;cursor:pointer;
+    border:0;width:26px;height:26px;border-radius:50%;
+    font-size:15px;line-height:1;cursor:pointer;
   }
+  .tile .ctl{display:flex;border-top:1px solid var(--line);background:var(--card)}
+  .tile .ctl button{
+    flex:1;background:transparent;border:0;
+    padding:10px 0;font-size:15px;color:var(--ink);
+    cursor:pointer;
+  }
+  .tile .ctl button:active{background:#FFF4E2}
+  .tile .ctl button + button{border-left:1px solid var(--line)}
 
   .actions{
     margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;

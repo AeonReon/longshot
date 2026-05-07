@@ -42,12 +42,27 @@ window.addEventListener('paste', (e) => {
 });
 
 function addFiles(fileList) {
-  const incoming = [...fileList].filter(f => f.type.startsWith('image/'));
-  if (!incoming.length) return;
+  const all = [...fileList];
+  // iOS sometimes returns empty type for HEIC/HEIF picked from Photos.
+  // Trust the picker (accept="image/*") AND fall back to extension sniffing.
+  const incoming = all.filter(f => {
+    const t = f.type || '';
+    if (t.startsWith('image/')) return true;
+    return /\.(heic|heif|jpe?g|png|webp|gif|bmp|tiff?|avif)$/i.test(f.name || '');
+  });
+  if (!incoming.length) {
+    hint.textContent = all.length
+      ? `Couldn't find image files in your selection (${all.length} picked). Try JPG/PNG.`
+      : '';
+    return;
+  }
   // Sort by filename so iOS IMG_4001 < IMG_4002 ordering works
   incoming.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  const newId = () => (crypto.randomUUID
+    ? crypto.randomUUID()
+    : 'i' + Math.random().toString(36).slice(2) + Date.now());
   for (const f of incoming) {
-    items.push({ id: crypto.randomUUID(), file: f, url: URL.createObjectURL(f) });
+    items.push({ id: newId(), file: f, url: URL.createObjectURL(f) });
   }
   render();
 }
@@ -92,12 +107,14 @@ function render() {
     div.draggable = true;
     div.dataset.id = it.id;
     div.innerHTML = `
-      <img src="${it.url}" alt="">
-      <div class="num">${idx + 1}</div>
-      <button class="x" aria-label="Remove">×</button>
-      <div class="nudge" style="position:absolute;bottom:4px;left:4px;right:4px;display:flex;gap:4px;justify-content:space-between">
-        <button class="nudge-l" style="background:rgba(0,0,0,.55);color:#fff;border:0;width:28px;height:24px;border-radius:6px;font-size:13px;cursor:pointer">◀</button>
-        <button class="nudge-r" style="background:rgba(0,0,0,.55);color:#fff;border:0;width:28px;height:24px;border-radius:6px;font-size:13px;cursor:pointer">▶</button>
+      <div class="thumb">
+        <img src="${it.url}" alt="">
+        <div class="num">${idx + 1}</div>
+        <button class="x" aria-label="Remove">×</button>
+      </div>
+      <div class="ctl">
+        <button class="nudge-l" aria-label="Move left">◀</button>
+        <button class="nudge-r" aria-label="Move right">▶</button>
       </div>
     `;
     div.querySelector('.x').onclick = (e) => { e.stopPropagation(); removeItem(it.id); };
@@ -148,9 +165,9 @@ stitchBtn.addEventListener('click', async () => {
     // Decode all images
     for (let i = 0; i < items.length; i++) {
       showStatus(`Loading image ${i+1}/${items.length}…`, (i / items.length) * 0.2);
-      items[i].bitmap = await createImageBitmap(items[i].file);
-      items[i].w = items[i].bitmap.width;
-      items[i].h = items[i].bitmap.height;
+      items[i].bitmap = await decodeImage(items[i].file, items[i].url);
+      items[i].w = items[i].bitmap.width || items[i].bitmap.naturalWidth;
+      items[i].h = items[i].bitmap.height || items[i].bitmap.naturalHeight;
     }
 
     // Width must match
@@ -211,6 +228,26 @@ stitchBtn.addEventListener('click', async () => {
     stitchBtn.disabled = items.length < 2;
   }
 });
+
+// Decode a file to something canvas.drawImage can consume.
+// createImageBitmap is fast but Safari can't decode HEIC; fall back to <img>.
+async function decodeImage(file, url) {
+  try {
+    return await createImageBitmap(file);
+  } catch (e) {
+    const img = new Image();
+    img.src = url;
+    if (img.decode) {
+      await img.decode();
+    } else {
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = () => rej(new Error('Could not decode ' + (file.name || 'image')));
+      });
+    }
+    return img;
+  }
+}
 
 // Render a bitmap into a canvas at given width and return greyscale Uint8Array + dims
 async function greyscaleScaled(bitmap, targetW) {
