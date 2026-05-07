@@ -198,11 +198,23 @@ stitchBtn.addEventListener('click', async () => {
       items[i].h = items[i].bitmap.height || items[i].bitmap.naturalHeight;
     }
 
-    // Width must match
-    const w0 = items[0].w;
-    for (const it of items) {
-      if (it.w !== w0) {
-        throw new Error(`Image widths don’t match (${items[0].file.name}=${w0}px, ${it.file.name}=${it.w}px). All screenshots must come from the same device.`);
+    // Normalize all images to a common width (first image's). Different widths
+    // are scaled proportionally so the stitch result is uniform — no distortion,
+    // no need for the user to give us perfectly-matched inputs.
+    const targetW = items[0].w;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.w !== targetW) {
+        const ratio = targetW / it.w;
+        const newH = Math.round(it.h * ratio);
+        const c = document.createElement('canvas');
+        c.width = targetW;
+        c.height = newH;
+        c.getContext('2d').drawImage(it.bitmap, 0, 0, targetW, newH);
+        diagLog(`resized image ${i+1}: ${it.w}×${it.h} → ${targetW}×${newH}`);
+        it.bitmap = c;
+        it.w = targetW;
+        it.h = newH;
       }
     }
 
