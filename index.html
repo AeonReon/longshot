@@ -43,12 +43,18 @@
     box-shadow:0 4px 0 var(--accent-deep);
     font-size:22px;
   }
-  header h1{font-size:22px;margin:0;letter-spacing:-0.01em}
+  header h1{font-size:22px;margin:0;letter-spacing:-0.01em;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  header h1 .ver{
+    font-size:11px;font-weight:500;letter-spacing:0;
+    color:var(--soft);font-family:ui-monospace,monospace;
+    background:#F4EAD2;padding:2px 7px;border-radius:6px;
+  }
   header p{margin:2px 0 0;color:var(--soft);font-size:13px}
 
   main{max-width:780px;margin:18px auto 80px}
 
   .drop{
+    display:block;
     background:var(--card);
     border:2px dashed var(--line);
     border-radius:18px;
@@ -228,7 +234,7 @@
 <header>
   <div class="logo">📜</div>
   <div>
-    <h1>Longshot</h1>
+    <h1>Longshot <span class="ver" id="verBadge">loading…</span></h1>
     <p>One-tap long screenshots — paste a URL or stitch your own.</p>
   </div>
 </header>
@@ -323,6 +329,7 @@
   // Build stamp + auto-refresh
   (async function(){
     const pill = document.getElementById('pill');
+    const verBadge = document.getElementById('verBadge');
     const banner = document.getElementById('reloadBanner');
     let initial = null;
     async function check(){
@@ -332,11 +339,15 @@
         const stamp = String(j.stamp||'');
         if (initial === null) {
           initial = stamp;
-          pill.textContent = 'v' + stamp.slice(-6);
+          const tag = 'v' + stamp.slice(-6);
+          pill.textContent = tag;
+          verBadge.textContent = tag;
         } else if (stamp && stamp !== initial) {
           banner.classList.add('show');
         }
-      }catch(e){}
+      }catch(e){
+        verBadge.textContent = 'v?';
+      }
     }
     check();
     setInterval(check, 60_000);
