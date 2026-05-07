@@ -3,12 +3,5 @@
   "version": "1.0.0",
   "description": "One-tap long screenshots — paste a URL or stitch your own.",
   "private": true,
-  "type": "module",
-  "engines": {
-    "node": "20.x"
-  },
-  "dependencies": {
-    "@sparticuz/chromium": "^131.0.1",
-    "puppeteer-core": "^23.10.4"
-  }
+  "type": "module"
 }

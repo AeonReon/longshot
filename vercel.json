@@ -1,11 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/screenshot.js": {
-      "memory": 1024,
-      "maxDuration": 60,
-      "includeFiles": "node_modules/@sparticuz/chromium/**"
-    },
     "api/build-stamp.js": {
       "memory": 128,
       "maxDuration": 5

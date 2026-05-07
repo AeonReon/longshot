@@ -371,7 +371,7 @@ captureBtn.addEventListener('click', async () => {
   working = true;
   captureBtn.disabled = true;
   hideResult();
-  showStatus('Loading the page on the server…', 0.15);
+  showStatus('Asking the screenshot service…', 0.15);
 
   try {
     const t0 = performance.now();
@@ -381,19 +381,34 @@ captureBtn.addEventListener('click', async () => {
       showStatus(`Rendering at ${chosenWidth}px width…`, frac);
     }, 1200);
 
-    const resp = await fetch('/api/screenshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, width: chosenWidth })
+    // Microlink: free public screenshot service. No auth, generous free tier.
+    // Returns JSON with screenshot.url pointing at the rendered PNG.
+    const device = chosenWidth <= 430 ? 'iPhone X' : (chosenWidth <= 768 ? 'iPad' : 'Macbook Pro 15');
+    const params = new URLSearchParams({
+      url,
+      screenshot: 'true',
+      meta: 'false',
+      embed: 'screenshot.url',
+      'viewport.width': String(chosenWidth),
+      'viewport.deviceScaleFactor': '2',
+      fullPage: 'true',
+      waitUntil: 'networkidle0',
+      type: 'png',
+      device,
     });
+
+    const apiUrl = `https://api.microlink.io/?${params.toString()}`;
+    const resp = await fetch(apiUrl);
     clearInterval(tick);
 
     if (!resp.ok) {
-      let err = 'Failed';
-      try { const j = await resp.json(); err = j.error || err; } catch {}
-      throw new Error(err);
+      const status = resp.status;
+      let body = '';
+      try { body = await resp.text(); } catch {}
+      throw new Error(`Screenshot service returned ${status}${body ? ': ' + body.slice(0, 120) : ''}`);
     }
 
+    // With embed=screenshot.url, the response IS the image bytes.
     const blob = await resp.blob();
     const blobUrl = URL.createObjectURL(blob);
     const dims = await new Promise((res) => {
@@ -403,7 +418,7 @@ captureBtn.addEventListener('click', async () => {
       im.src = blobUrl;
     });
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-    showResult(blobUrl, dims.w, dims.h, blob.size, [`Captured in ${elapsed}s`]);
+    showResult(blobUrl, dims.w, dims.h, blob.size, [`Captured in ${elapsed}s via microlink.io`]);
 
   } catch (err) {
     console.error(err);
