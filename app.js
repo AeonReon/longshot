@@ -258,7 +258,7 @@ stitchBtn.addEventListener('click', async () => {
     showStatus('Exporting…', 0.95);
     const blob = await new Promise(res => out.toBlob(res, 'image/png'));
     const url = URL.createObjectURL(blob);
-    showResult(url, out.width, out.height, blob.size, warnings);
+    showResult(url, out.width, out.height, blob.size, warnings, blob);
 
   } catch (err) {
     console.error(err);
@@ -399,7 +399,11 @@ function showStatus(msg, frac, error = false) {
 }
 function hideStatus() { status.classList.remove('show'); }
 
-function showResult(url, w, h, sizeBytes, warnings) {
+// Hold the most recent result so the Save button can either share or download.
+let lastResultBlob = null;
+let lastResultFilename = '';
+
+function showResult(url, w, h, sizeBytes, warnings, blob) {
   hideStatus();
   resultImg.src = url;
   const kb = (sizeBytes / 1024).toFixed(0);
@@ -408,13 +412,40 @@ function showResult(url, w, h, sizeBytes, warnings) {
   let meta = `${w} × ${h}px · ${sizeStr}`;
   if (warnings.length) meta += '<br><span style="color:var(--warn)">⚠ ' + warnings.join(' ') + '</span>';
   resultMeta.innerHTML = meta;
-  downloadEl.href = url;
+
   const ts = new Date().toISOString().replace(/[-:T.]/g,'').slice(0,14);
-  downloadEl.download = `longshot-${ts}.png`;
+  lastResultFilename = `longshot-${ts}.png`;
+  lastResultBlob = blob || null;
+
+  // Always set href as a fallback, but the click handler intercepts on iOS/mobile.
+  downloadEl.href = url;
+  downloadEl.download = lastResultFilename;
+  downloadEl.textContent = 'Save PNG';
+
   resultEl.classList.add('show');
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function hideResult() { resultEl.classList.remove('show'); }
+
+// On iOS, <a download> opens a context menu instead of downloading.
+// Web Share API with a File gives the user a single-tap "Save Image" → Photos.
+// Desktop browsers fall through to the default <a download> behaviour.
+downloadEl.addEventListener('click', async (e) => {
+  if (!lastResultBlob) return;  // Let the <a> default handle it
+  const file = new File([lastResultBlob], lastResultFilename, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    e.preventDefault();
+    try {
+      await navigator.share({ files: [file], title: 'Longshot' });
+    } catch (err) {
+      // User cancelled or share failed — silently allow the <a download> fallback
+      if (err && err.name !== 'AbortError') {
+        diagLog('share failed: ' + err.message);
+      }
+    }
+  }
+  // Otherwise: <a href download> default takes over (desktop)
+});
 
 render();
 
@@ -564,7 +595,7 @@ captureBtn.addEventListener('click', async () => {
       im.src = blobUrl;
     });
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-    showResult(blobUrl, dims.w, dims.h, blob.size, [`Captured in ${elapsed}s via microlink.io`]);
+    showResult(blobUrl, dims.w, dims.h, blob.size, [`Captured in ${elapsed}s via microlink.io`], blob);
 
   } catch (err) {
     console.error(err);
