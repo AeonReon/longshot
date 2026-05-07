@@ -1,6 +1,9 @@
 // Server-side full-page screenshot via headless Chromium.
 // POST { url: string, width?: number } → PNG bytes.
 
+// IMPORTANT: AWS_LAMBDA_JS_RUNTIME must be set in Vercel project env (we use nodejs22.x)
+// so it's read by @sparticuz/chromium at module-load time.
+// LD_LIBRARY_PATH must include /tmp/aws/lib (where chromium extracts libnss3 etc) before launch.
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 
@@ -70,6 +73,15 @@ export default async function handler(req, res) {
 
   let browser;
   try {
+    // Ensure the loader can find libnss3.so / libnspr4.so etc that
+    // @sparticuz/chromium extracts to /tmp/aws/lib at executablePath() time.
+    const execPath = await chromium.executablePath();
+    const libDir = '/tmp/aws/lib';
+    const existing = process.env.LD_LIBRARY_PATH || '';
+    if (!existing.includes(libDir)) {
+      process.env.LD_LIBRARY_PATH = existing ? `${libDir}:${existing}` : libDir;
+    }
+
     browser = await puppeteer.launch({
       args: [
         ...chromium.args,
@@ -85,7 +97,7 @@ export default async function handler(req, res) {
         isMobile,
         hasTouch: isMobile,
       },
-      executablePath: await chromium.executablePath(),
+      executablePath: execPath,
       headless: chromium.headless,
     });
 
