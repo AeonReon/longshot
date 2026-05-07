@@ -323,19 +323,15 @@
   </div>
 
   <div class="panel" id="panel-stitch">
-    <div class="ios-tip" id="iosTip">
-      <strong>📱 The reliable way on iPhone:</strong><br>
-      Open <b>Photos</b> → select your screenshots → tap <b>Share</b> → tap <b>Longshot</b> in the share sheet.
-      Your photos arrive here and we stitch them.<br>
-      <small>(Requires Longshot added to Home Screen first — tap Share in Safari → Add to Home Screen.)</small>
-    </div>
-
     <div class="drop" id="drop">
-      <strong>Or drop / tap here on desktop</strong>
+      <strong>Drop screenshots here, or tap to choose</strong>
       <span>Take 2+ overlapping screenshots, scrolling a bit each time. Order matters — sort them after.</span>
       <span class="pick-btn">Choose photos</span>
       <input id="file" type="file" accept="image/*" multiple>
     </div>
+    <p style="font-size:12px;color:var(--soft);margin:8px 2px 0;line-height:1.4">
+      📱 On iPhone: works in Safari. If you’ve added Longshot to Home Screen and the picker fails there, open it in Safari instead — known iOS bug in standalone PWA mode.
+    </p>
 
     <div id="diag" aria-live="polite"></div>
 
@@ -376,7 +372,7 @@
 <script>
   // Human-readable version. Bump this when shipping a meaningful change.
   // The git SHA is still used internally for new-build detection (auto-refresh banner).
-  const APP_VERSION = 'v1';
+  const APP_VERSION = 'v2';
 
   // PWA service worker
   if ('serviceWorker' in navigator) {
