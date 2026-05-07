@@ -303,10 +303,11 @@ async function findOverlap(itemA, itemB) {
   const aLow = itemA.low, bLow = itemB.low;
   const stripLow = Math.min(40, Math.floor(aLow.h * 0.2));
 
-  // Search range: skip from min=10% of B height to max=B height - stripLow
-  // (we assume there's at least some overlap; user took screenshots while scrolling)
+  // Search range: real overlap is somewhere in the upper 80% of B.
+  // Anything in the bottom 20% is almost certainly a coincidental match
+  // on white space / status bar / home indicator and not real content overlap.
   const minY = 0;
-  const maxY = bLow.h - stripLow;
+  const maxY = Math.min(bLow.h - stripLow, Math.floor(bLow.h * 0.80));
 
   const rough = ssdSearch(
     aLow.grey, aLow.w, aLow.h,
@@ -320,24 +321,32 @@ async function findOverlap(itemA, itemB) {
   const roughYFull = Math.round(rough.y * ratio);
   const stripFull = Math.min(80, Math.floor(aFull.h * 0.08));
   const refineRange = Math.ceil(ratio) + 4; // ±N pixels around rough match
+  const fullMaxY = Math.min(bFull.h - stripFull, Math.floor(bFull.h * 0.80));
 
   const refined = ssdSearch(
     aFull.grey, aFull.w, aFull.h,
     bFull.grey, bFull.w, bFull.h,
     stripFull,
     Math.max(0, roughYFull - refineRange),
-    Math.min(bFull.h - stripFull, roughYFull + refineRange)
+    Math.min(fullMaxY, roughYFull + refineRange)
   );
 
   // Score interpretation: avg squared diff per pixel.
-  // Pure white-on-white ~0; mismatched content ~2000+. Use 1500 as poor threshold.
-  const POOR = 1500;
-  const poor = refined.score > POOR;
+  // Pure white-on-white ~0; mismatched content ~2000+. Use 800 as poor threshold —
+  // tighter than before so flat regions don't get accepted as "real" matches.
+  const POOR = 800;
+  let poor = refined.score > POOR;
 
-  // Skip = end of overlap region in B = refined.y + stripFull
-  // Because the bottom 'stripFull' rows of A appear in B starting at refined.y,
-  // so B[0..refined.y+stripFull] is already shown in A.
-  const skip = poor ? 0 : refined.y + stripFull;
+  // Sanity fallback: if the algorithm decided to skip ~all of B, that's
+  // almost certainly wrong (real screenshots overlap by at most ~85%).
+  // Treat as poor and just concatenate that pair directly.
+  const proposedSkip = refined.y + stripFull;
+  if (proposedSkip > bFull.h * 0.90) {
+    poor = true;
+  }
+
+  const skip = poor ? 0 : proposedSkip;
+  diagLog(`overlap: y=${refined.y}/${bFull.h} score=${refined.score.toFixed(0)} skip=${skip}${poor ? ' (rejected)' : ''}`);
   return { skip, poor, score: refined.score };
 }
 
