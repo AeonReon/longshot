@@ -397,18 +397,78 @@ function hideResult() { resultEl.classList.remove('show'); }
 
 render();
 
+// ---------- Share Target ingest ----------
+
+// If the user landed here via Photos.app → Share → Longshot, the service
+// worker stashed the photos in a cache before redirecting. Pull them out.
+async function ingestSharedFiles() {
+  if (!('caches' in self)) return;
+  const url = new URL(location.href);
+  const fromShare = url.searchParams.has('from-share') || location.hash === '#stitch';
+  if (!fromShare) return;
+
+  try {
+    const cache = await caches.open('longshot-share');
+    const manifestResp = await cache.match('/__share/manifest');
+    if (!manifestResp) return;
+    const { count = 0 } = await manifestResp.json();
+    if (!count) return;
+
+    const files = [];
+    for (let i = 0; i < count; i++) {
+      const resp = await cache.match(`/__share/${i}`);
+      if (!resp) continue;
+      const blob = await resp.blob();
+      const filename = resp.headers.get('X-Filename') || `photo-${i}.jpg`;
+      const type = resp.headers.get('Content-Type') || blob.type || 'image/jpeg';
+      files.push(new File([blob], filename, { type }));
+    }
+
+    // Tear down the share cache so we don't re-ingest on reload
+    const keys = await cache.keys();
+    for (const k of keys) await cache.delete(k);
+
+    if (files.length) {
+      diagLog(`Share ingest: received ${files.length} photo(s)`);
+      // Force-switch to the Stitch tab
+      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'stitch'));
+      document.getElementById('panel-url').classList.remove('active');
+      document.getElementById('panel-stitch').classList.add('active');
+      addFiles(files);
+    }
+
+    // Clean URL so refresh doesn't try to re-ingest
+    history.replaceState(null, '', '/');
+  } catch (e) {
+    diagLog('Share ingest failed: ' + e.message);
+  }
+}
+
+// Run once after first paint so the diagnostic strip is in the DOM.
+window.addEventListener('load', () => {
+  setTimeout(ingestSharedFiles, 100);
+});
+
 // ---------- Tabs ----------
 
+function setActiveTab(tab) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('panel-url').classList.toggle('active', tab === 'url');
+  document.getElementById('panel-stitch').classList.toggle('active', tab === 'stitch');
+  try { localStorage.setItem('longshot-tab', tab); } catch {}
+  hideResult();
+  hideStatus();
+}
+
 document.querySelectorAll('.tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
-    const tab = btn.dataset.tab;
-    document.getElementById('panel-url').classList.toggle('active', tab === 'url');
-    document.getElementById('panel-stitch').classList.toggle('active', tab === 'stitch');
-    hideResult();
-    hideStatus();
-  });
+  btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
 });
+
+// Restore last-used tab on load (default to Stitch since it's the primary use case)
+try {
+  const saved = localStorage.getItem('longshot-tab');
+  if (saved === 'stitch' || saved === 'url') setActiveTab(saved);
+} catch {}
 
 // ---------- URL mode ----------
 
